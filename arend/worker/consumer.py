@@ -1,40 +1,30 @@
-from arend.brokers import QueueBroker
-from arend.settings import settings
-from arend.tube.task import Task
-
 import logging
 import time
+
+from arend.backends import Task
+from arend.broker import BeanstalkdBroker
+from arend.settings import settings
+
+__all__ = ["consumer"]
 
 
 logger = logging.getLogger(__name__)
 
 
-def consumer(queue_name: str, timeout: int = 20, testing: bool = False):
+def consumer(queue_name: str, logger: logging.Logger):
     """
     Single consumer.
-
-    :param queue_name:
-    :param timeout:
-    :param testing:
-    :return:
     """
 
-    run = True
+    while True:
 
-    while run:
+        with BeanstalkdBroker(queue_name=queue_name) as broker:
 
-        with QueueBroker(queue_name=queue_name) as broker:
+            job = broker.reserve()
+            task = Task.get(uuid=job.body)
+            if task:
+                task.run()  # run sync inside worker
 
-            message = broker.reserve(timeout=timeout)
-            if message is None and testing:  # for testing purposes
-                run = False
-                continue
-
-            if message:
-                queue_task = Task.get(uuid=message.body)
-                if queue_task:
-                    queue_task.run()  # run sync inside worker
-
-                broker.delete(message)
+            job.delete()
 
         time.sleep(settings.sleep_time_consumer)

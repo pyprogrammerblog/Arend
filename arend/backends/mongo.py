@@ -1,27 +1,68 @@
-from arend.settings import settings
-from pymongo import MongoClient
-from pymongo.collection import Collection
-
 import logging
+from contextlib import contextmanager
+from datetime import datetime
+from uuid import UUID
+
+from arend.backends.base import BaseBackend
+from arend.settings import settings
+from pymongo.collection import Collection
+from pymongo.mongo_client import MongoClient
+
+__all__ = ["Task"]
 
 
 logger = logging.getLogger(__name__)
 
 
-class MongoBackend:
-    def __init__(self):
-        self.db: MongoClient = MongoClient(settings.mongodb_string)
-        collection = settings.mongodb_notifier_task_results
-        self.tasks_collection: Collection = self.db[collection]
+class Task(BaseBackend):
+    """
+    Mongo DB Adapter
+    """
 
-    def __enter__(self):
+    @classmethod
+    @contextmanager
+    def mongo_collection(cls) -> Collection:
+        """
+        Yield a connection
+        """
+        db_conn = settings.mongo.connection
+        db_name = settings.mongo.db
+        db_collection = settings.mongo.collection
+
+        with MongoClient(db_conn, UuidRepresentation="standard") as client:
+            db = client.get_database(db_name)
+            collection = db.get_collection(db_collection)
+            yield collection
+
+    @classmethod
+    def get(cls, uuid: UUID) -> "Task":
+        """
+        Get
+        :param uuid:
+        :return:
+        """
+        with cls.mongo_collection() as collection:
+            if obj := collection.find_one(filter={"uuid": uuid}):
+                return cls(**obj)
+
+    def save(self) -> "Task":
+        """
+        Save
+        :return:
+        """
+        self.updated = datetime.utcnow()
+        with self.mongo_collection() as collection:
+            collection.update_one(
+                filter={"uuid": self.uuid},
+                update={"$set": self.dict()},
+                upsert=True,
+            )
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.db.close()
-
-    def find_one(self):
-        pass
-
-    def update_one(self):
-        pass
+    def delete(self) -> int:
+        """
+        Deletes object in DataBase
+        """
+        with self.mongo_collection() as collection:
+            deleted = collection.delete_one({"uuid": self.uuid})
+            return deleted.deleted_count

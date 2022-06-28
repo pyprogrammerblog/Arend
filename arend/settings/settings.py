@@ -1,37 +1,22 @@
-from typing import Literal
-
-from pydantic import (
-    BaseModel,
-    BaseSettings,
-    RedisDsn,
-    PostgresDsn,
-    AmqpDsn,
-)
+from typing import Dict
+from pydantic import BaseSettings, Field
+from arend.backends import Backends
+from arend.settings.broker.beanstalkd import BeanstalkdSettings
 
 
-class Settings(BaseSettings):
+class ArendSettings(BaseSettings):
 
-    # brokers
-    broker: Literal["redis", "beanstalk", "sqs"]
-    broker_uri: str
+    # general task settings
+    task_max_retries: int = 10
+    task_priority: int = None
+    task_delay: int = None
+    task_delay_factor: int = 10
+
+    # queues: key: name of the queue, value: concurrency
+    queues: Dict[str, int] = None
 
     # backends
-    backend: Literal["redis", "postgres", "ampqn", "beanstalk", "sqs"]
-    backend_uri: str
+    backend: Backends = Field(discriminator="backend_type")
 
-    # general settings
-    max_retries: int = 10
-    backoff_factor: int = 1
-    connect_timeout: int = 10  # seconds
-    priority: int = None
-    delay: int = None
-    delay_factor: int = 10
-    sleep_time_consumer: int = 1
-
-    # redis settings
-    redis_socket_timeout: int = 2 * 60
-    redis_socket_connect_timeout: int = 2 * 60
-
-    # mongo backend settings
-    mongodb_max_pool_size: int = 10
-    mongodb_min_pool_size: int = 0
+    # broker
+    broker: BeanstalkdSettings = BeanstalkdSettings()

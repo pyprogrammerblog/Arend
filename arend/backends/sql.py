@@ -1,27 +1,51 @@
-from arend.settings import settings
-from pymongo import MongoClient
-from pymongo.collection import Collection
-
 import logging
+from datetime import datetime
+from typing import Union
+from uuid import UUID, uuid4
+
+from arend.backends.base import BaseBackend
+from arend.settings import settings
+from sqlmodel import Field, Session, SQLModel
+
+__all__ = ["Task"]
 
 
 logger = logging.getLogger(__name__)
 
 
-class SqlBackend:
-    def __init__(self):
-        self.db: MongoClient = MongoClient(settings.mongodb_string)
-        collection = settings.mongodb_notifier_task_results
-        self.tasks_collection: Collection = self.db[collection]
+class Task(BaseBackend, SQLModel, table=True):
+    """
+    Mongo DB Adapter
+    """
 
-    def __enter__(self):
+    uuid: UUID = Field(default_factory=uuid4, primary_key=True)
+
+    @classmethod
+    def get(cls, uuid: UUID) -> Union["Task", None]:
+        """
+        Get object from DataBase
+        """
+        with Session(settings.sql.engine) as session:
+            return session.query(cls).get(uuid)
+
+    def save(self):
+        """
+        Updates object in DataBase
+        """
+        self.updated = datetime.utcnow()
+        with Session(settings.sql.engine) as session:
+            session.add(self)
+            session.commit()
+            session.refresh(self)
+
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.db.close()
-
-    def find_one(self):
-        pass
-
-    def update_one(self):
-        pass
+    def delete(self) -> Union[UUID, None]:
+        """
+        Deletes object in DataBase
+        """
+        with Session(settings.sql.engine) as session:
+            if session.query(self).get(self.uuid):
+                session.delete(self)
+                session.commit()
+                return self.uuid
